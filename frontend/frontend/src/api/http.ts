@@ -2,9 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 
-const apiBase =
-  import.meta.env.VITE_API_BASE ||
-  'https://acceptable-benevolence-production-9080.up.railway.app'
+const apiBase = 'https://acceptable-benevolence-production-9080.up.railway.app'
 
 function readCookie(name: string): string {
   const prefix = `${name}=`
