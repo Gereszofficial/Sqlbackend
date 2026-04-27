@@ -2,6 +2,11 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 
+// DEBUG - látni fogod a console-ban
+const API_BASE = 'https://acceptable-benevolence-production-9080.up.railway.app'
+console.log('API BASE FIX ACTIVE:', API_BASE)
+
+// cookie olvasó
 function readCookie(name: string): string {
   const prefix = `${name}=`
   const parts = document.cookie.split(';').map((v) => v.trim())
@@ -9,12 +14,16 @@ function readCookie(name: string): string {
   return match ? decodeURIComponent(match.slice(prefix.length)) : ''
 }
 
+// axios instance
 export const http = axios.create({
-  baseURL: 'https://acceptable-benevolence-production-9080.up.railway.app',
+  baseURL: API_BASE,
   withCredentials: true,
-  headers: { 'Content-Type': 'application/json' }
+  headers: {
+    'Content-Type': 'application/json'
+  }
 })
 
+// request interceptor (CSRF)
 http.interceptors.request.use((config) => {
   const method = (config.method || 'get').toUpperCase()
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
@@ -30,6 +39,7 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+// response interceptor (auth)
 http.interceptors.response.use(
   (res) => res,
   async (err) => {
