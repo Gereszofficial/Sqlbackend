@@ -282,3 +282,34 @@ body {
     grid-row: 3;
   }
 }
+
+
+@media (max-width: 640px) {
+  .login-shell {
+    padding: 0.75rem;
+    place-items: start center;
+  }
+
+  .hero-card,
+  .card {
+    border-radius: 1.25rem;
+  }
+
+  .hero-card {
+    min-height: auto !important;
+    padding: 1rem;
+  }
+
+  .sql-code {
+    min-height: 180px;
+    font-size: 0.75rem;
+    line-height: 1.45rem;
+    padding: 1rem;
+  }
+
+  header nav {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+}

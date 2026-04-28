@@ -11,6 +11,26 @@ function readCookie(name: string): string {
   return match ? decodeURIComponent(match.slice(prefix.length)) : ''
 }
 
+export function setCsrfToken(token: string) {
+  if (token) {
+    sessionStorage.setItem('sqltrainer_csrf', token)
+    localStorage.setItem('sqltrainer_csrf', token)
+  }
+}
+
+export function clearCsrfToken() {
+  sessionStorage.removeItem('sqltrainer_csrf')
+  localStorage.removeItem('sqltrainer_csrf')
+}
+
+function getCsrfToken(): string {
+  return (
+    sessionStorage.getItem('sqltrainer_csrf') ||
+    localStorage.getItem('sqltrainer_csrf') ||
+    readCookie('sqltrainer_csrf')
+  )
+}
+
 export const http = axios.create({
   baseURL: API_BASE,
   withCredentials: true,
@@ -24,7 +44,7 @@ http.interceptors.request.use((config) => {
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
   if (needsCsrf) {
-    const csrf = localStorage.getItem('sqltrainer_csrf') || readCookie('sqltrainer_csrf')
+    const csrf = getCsrfToken()
 
     if (csrf) {
       config.headers = config.headers ?? {}
@@ -42,11 +62,11 @@ http.interceptors.response.use(
 
     if (status === 401) {
       const requestUrl = String(err?.config?.url || '')
-      const isAuthBootstrapCheck = requestUrl.includes('/api/auth/me')
+      const isAuthBootstrapCheck = requestUrl.includes('/auth/me')
 
       const auth = useAuthStore()
       auth.applyUser(null)
-      localStorage.removeItem('sqltrainer_csrf')
+      clearCsrfToken()
 
       if (!isAuthBootstrapCheck && router.currentRoute.value.path !== '/login') {
         await router.push({

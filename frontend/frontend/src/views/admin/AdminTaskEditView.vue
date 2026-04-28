@@ -152,9 +152,9 @@ async function onFileImport(ev: Event, target: 'seed' | 'expected') {
 }
 
 function toSqlModeValue(v: string) {
-  // backend enum: 0=SelectOnly, 1=SandboxSafe
-  return v === "SandboxSafe" ? 1 : 0
+  return v === 'SandboxSafe' ? 'SandboxSafe' : 'SelectOnly'
 }
+
 
 async function save() {
   error.value = ""

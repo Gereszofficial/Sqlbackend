@@ -1,14 +1,17 @@
 import { defineStore } from 'pinia'
-import { http } from '@/api/http'
+import { clearCsrfToken, http, setCsrfToken } from '@/api/http'
 import type { AuthResponse, CurrentUser } from '@/types/api'
 
 type Role = 'Student' | 'Admin' | 'Unknown'
 
 function normalizeRole(raw?: string): Role {
   if (!raw) return 'Unknown'
+
   const r = raw.toLowerCase()
+
   if (r.includes('admin') || r.includes('teacher')) return 'Admin'
   if (r.includes('student')) return 'Student'
+
   return 'Unknown'
 }
 
@@ -44,7 +47,9 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async ensureSession(force = false) {
-      if (this.sessionChecked && !force) return this.isAuthed
+      if (this.sessionChecked && !force) {
+        return this.isAuthed
+      }
 
       try {
         const res = await http.get<CurrentUser>('/api/auth/me')
@@ -52,28 +57,39 @@ export const useAuthStore = defineStore('auth', {
         return true
       } catch {
         this.applyUser(null)
+        clearCsrfToken()
         return false
       }
     },
 
     async login(email: string, password: string) {
-      const res = await http.post<AuthResponse>('/api/auth/login', { email, password })
+      const res = await http.post<AuthResponse>('/api/auth/login', {
+        email,
+        password
+      })
 
       if (res.data.csrfToken) {
-        localStorage.setItem('sqltrainer_csrf', res.data.csrfToken)
+        setCsrfToken(res.data.csrfToken)
       }
 
       this.applyUser(res.data.user)
+
+      return res.data.user
     },
 
     async register(email: string, password: string) {
-      const res = await http.post<AuthResponse>('/api/auth/register', { email, password })
+      const res = await http.post<AuthResponse>('/api/auth/register', {
+        email,
+        password
+      })
 
       if (res.data.csrfToken) {
-        localStorage.setItem('sqltrainer_csrf', res.data.csrfToken)
+        setCsrfToken(res.data.csrfToken)
       }
 
       this.applyUser(res.data.user)
+
+      return res.data.user
     },
 
     async logout() {
@@ -81,10 +97,10 @@ export const useAuthStore = defineStore('auth', {
         await http.post('/api/auth/logout')
       } catch {
         // ignore
+      } finally {
+        clearCsrfToken()
+        this.applyUser(null)
       }
-
-      localStorage.removeItem('sqltrainer_csrf')
-      this.applyUser(null)
     }
   }
 })
