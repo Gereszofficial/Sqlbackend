@@ -5,7 +5,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TableSchema } from '@/types/api'
 import type * as Monaco from 'monaco-editor'
 
@@ -20,21 +20,37 @@ const emit = defineEmits<{
 }>()
 
 const el = ref<HTMLDivElement | null>(null)
+
 let monaco: typeof import('monaco-editor') | null = null
 let editor: Monaco.editor.IStandaloneCodeEditor | null = null
 let providerDispose: Monaco.IDisposable | null = null
+let disposed = false
 
-function buildCompletionItems(schema: TableSchema[] | undefined): Monaco.languages.CompletionItem[]
-{
+function buildCompletionItems(schema: TableSchema[] | undefined): Monaco.languages.CompletionItem[] {
   const items: Monaco.languages.CompletionItem[] = []
 
-  // Alap SQL kulcsszavak
   const keywords = [
-    'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT',
-    'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'ON',
-    'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
-    'DISTINCT', 'AS'
+    'SELECT',
+    'FROM',
+    'WHERE',
+    'GROUP BY',
+    'ORDER BY',
+    'HAVING',
+    'LIMIT',
+    'JOIN',
+    'LEFT JOIN',
+    'RIGHT JOIN',
+    'INNER JOIN',
+    'ON',
+    'COUNT',
+    'SUM',
+    'AVG',
+    'MIN',
+    'MAX',
+    'DISTINCT',
+    'AS'
   ]
+
   for (const k of keywords) {
     items.push({
       label: k,
@@ -63,6 +79,7 @@ function buildCompletionItems(schema: TableSchema[] | undefined): Monaco.languag
         detail: c.dataType,
         range: undefined as any
       })
+
       items.push({
         label: c.name,
         kind: (monaco as any).languages.CompletionItemKind.Field,
@@ -72,11 +89,13 @@ function buildCompletionItems(schema: TableSchema[] | undefined): Monaco.languag
       })
     }
   }
+
   return items
 }
 
 function installCompletionProvider() {
   if (!monaco) return
+
   providerDispose?.dispose()
 
   const baseItems = buildCompletionItems(props.schema)
@@ -85,32 +104,52 @@ function installCompletionProvider() {
     triggerCharacters: ['.', ' ', '`'],
     provideCompletionItems: (model, position) => {
       const word = model.getWordUntilPosition(position)
+
       const range = {
         startLineNumber: position.lineNumber,
         endLineNumber: position.lineNumber,
         startColumn: word.startColumn,
         endColumn: word.endColumn
       }
-      const suggestions = baseItems.map((i) => ({ ...i, range }))
+
+      const suggestions = baseItems.map((i) => ({
+        ...i,
+        range
+      }))
+
       return { suggestions }
     }
   })
 }
 
 onMounted(async () => {
-  if (!el.value) return
+  disposed = false
 
-  // Krumpli gépbarát: a Monaco csak akkor töltődik be, amikor az editor tényleg mountol.
-  // Így a kezdeti UI gyorsabban megjelenik.
-  monaco = await import('monaco-editor')
+  await nextTick()
 
-  editor = monaco.editor.create(el.value, {
+  const container = el.value
+
+  if (!container || !container.isConnected) {
+    return
+  }
+
+  const imported = await import('monaco-editor')
+
+  if (disposed || !container.isConnected) {
+    return
+  }
+
+  monaco = imported
+
+  editor = monaco.editor.create(container, {
     value: props.modelValue || '',
     language: 'sql',
     theme: 'vs-dark',
     fontSize: 12,
     fontLigatures: true,
-    minimap: { enabled: false },
+    minimap: {
+      enabled: false
+    },
     scrollBeyondLastLine: false,
     wordWrap: 'on',
     automaticLayout: true,
@@ -133,8 +172,12 @@ watch(
   () => props.modelValue,
   (v) => {
     if (!editor) return
+
     const current = editor.getValue()
-    if (v !== current) editor.setValue(v)
+
+    if (v !== current) {
+      editor.setValue(v)
+    }
   }
 )
 
@@ -149,13 +192,19 @@ watch(
 watch(
   () => props.readOnly,
   (ro) => {
-    editor?.updateOptions({ readOnly: ro ?? false })
+    editor?.updateOptions({
+      readOnly: ro ?? false
+    })
   }
 )
 
 onBeforeUnmount(() => {
+  disposed = true
+
   providerDispose?.dispose()
   editor?.dispose()
+
+  providerDispose = null
   editor = null
   monaco = null
 })

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { clearCsrfToken, http, setCsrfToken } from '@/api/http'
+import { clearAccessToken, clearCsrfToken, http, setAccessToken, setCsrfToken } from '@/api/http'
 import type { AuthResponse, CurrentUser } from '@/types/api'
 
 type Role = 'Student' | 'Admin' | 'Unknown'
@@ -39,6 +39,7 @@ export const useAuthStore = defineStore('auth', {
       if (this.role === 'Unknown' || !this.email) {
         localStorage.removeItem('sqltrainer_role')
         localStorage.removeItem('sqltrainer_email')
+        clearAccessToken()
         return
       }
 
@@ -72,6 +73,10 @@ export const useAuthStore = defineStore('auth', {
         setCsrfToken(res.data.csrfToken)
       }
 
+      if (res.data.accessToken) {
+        setAccessToken(res.data.accessToken)
+      }
+
       this.applyUser(res.data.user)
 
       return res.data.user
@@ -87,6 +92,10 @@ export const useAuthStore = defineStore('auth', {
         setCsrfToken(res.data.csrfToken)
       }
 
+      if (res.data.accessToken) {
+        setAccessToken(res.data.accessToken)
+      }
+
       this.applyUser(res.data.user)
 
       return res.data.user
@@ -99,8 +108,9 @@ export const useAuthStore = defineStore('auth', {
         // ignore
       } finally {
         clearCsrfToken()
+        clearAccessToken()
         this.applyUser(null)
       }
     }
   }
-})
+})  

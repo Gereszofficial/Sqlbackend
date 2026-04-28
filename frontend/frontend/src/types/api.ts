@@ -1,7 +1,9 @@
 export type CurrentUser = { email: string; role: 'Student' | 'Admin' }
+
 export type AuthResponse = {
   user: CurrentUser
   csrfToken: string
+  accessToken: string
 }
 
 export type CreateIdResponse = { id: number }
@@ -15,12 +17,39 @@ export type TaskSummary = {
   topicTitle?: string | null
 }
 
-export type RankBadge = { key: string; label: string; tone: string }
-export type StudentProgress = { completedCount: number; totalTasks: number; percent: number; badge: RankBadge }
+export type RankBadge = {
+  key: string
+  label: string
+  tone: string
+}
 
-export type TopicSummary = { id: number; title: string; slug: string; isCompleted: boolean }
-export type TopicTaskSummary = { id: number; title: string; isCompleted: boolean }
-export type TopicDetails = { id: number; title: string; slug: string; descriptionMarkdown: string; tasks: TopicTaskSummary[] }
+export type StudentProgress = {
+  completedCount: number
+  totalTasks: number
+  percent: number
+  badge: RankBadge
+}
+
+export type TopicSummary = {
+  id: number
+  title: string
+  slug: string
+  isCompleted: boolean
+}
+
+export type TopicTaskSummary = {
+  id: number
+  title: string
+  isCompleted: boolean
+}
+
+export type TopicDetails = {
+  id: number
+  title: string
+  slug: string
+  descriptionMarkdown: string
+  tasks: TopicTaskSummary[]
+}
 
 export type AdminTopicSummary = {
   id: number
@@ -32,7 +61,12 @@ export type AdminTopicSummary = {
   taskCount: number
 }
 
-export type AdminTopicUpsert = { title: string; slug: string; descriptionMarkdown: string; isPublished: boolean }
+export type AdminTopicUpsert = {
+  title: string
+  slug: string
+  descriptionMarkdown: string
+  isPublished: boolean
+}
 
 export type AdminTopicTaskUpsert = {
   id?: number | null
@@ -62,6 +96,7 @@ export type AdminTaskSummary = {
   createdAtUtc: string
   publishedAtUtc?: string | null
 }
+
 export type TaskDetails = {
   id: number
   title: string
@@ -81,6 +116,7 @@ export type AdminTaskCreate = {
   sqlMode: 'SelectOnly' | 'SandboxSafe'
   isPublished: boolean
 }
+
 export type AdminTaskUpdate = AdminTaskCreate
 
 export type ColumnSchema = {
@@ -91,8 +127,15 @@ export type ColumnSchema = {
   isForeignKey?: boolean
   isIndexed?: boolean
 }
-export type TableSchema = { name: string; columns: ColumnSchema[] }
-export type TaskSchemaResponse = { tables: TableSchema[] }
+
+export type TableSchema = {
+  name: string
+  columns: ColumnSchema[]
+}
+
+export type TaskSchemaResponse = {
+  tables: TableSchema[]
+}
 
 export type PreviewColumn = {
   name: string
@@ -100,8 +143,16 @@ export type PreviewColumn = {
   isForeignKey?: boolean
   isIndexed?: boolean
 }
-export type TablePreview = { name: string; columns: PreviewColumn[]; rows: Record<string, any>[] }
-export type TaskPreviewResponse = { tables: TablePreview[] }
+
+export type TablePreview = {
+  name: string
+  columns: PreviewColumn[]
+  rows: Record<string, any>[]
+}
+
+export type TaskPreviewResponse = {
+  tables: TablePreview[]
+}
 
 export type RunResult = {
   ok: boolean
@@ -124,4 +175,6 @@ export type SubmissionDto = {
   runnerMessage?: string | null
 }
 
-export type ExpectedResultResponse = { rows: Record<string, any>[] }
+export type ExpectedResultResponse = {
+  rows: Record<string, any>[]
+}

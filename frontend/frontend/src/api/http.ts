@@ -23,6 +23,26 @@ export function clearCsrfToken() {
   localStorage.removeItem('sqltrainer_csrf')
 }
 
+export function setAccessToken(token: string) {
+  if (token) {
+    sessionStorage.setItem('sqltrainer_access_token', token)
+    localStorage.setItem('sqltrainer_access_token', token)
+  }
+}
+
+export function clearAccessToken() {
+  sessionStorage.removeItem('sqltrainer_access_token')
+  localStorage.removeItem('sqltrainer_access_token')
+}
+
+function getAccessToken(): string {
+  return (
+    sessionStorage.getItem('sqltrainer_access_token') ||
+    localStorage.getItem('sqltrainer_access_token') ||
+    ''
+  )
+}
+
 function getCsrfToken(): string {
   return (
     sessionStorage.getItem('sqltrainer_csrf') ||
@@ -40,12 +60,17 @@ export const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
+  const token = getAccessToken()
+  if (token) {
+    config.headers = config.headers ?? {}
+    config.headers.Authorization = `Bearer ${token}`
+  }
+
   const method = (config.method || 'get').toUpperCase()
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
   if (needsCsrf) {
     const csrf = getCsrfToken()
-
     if (csrf) {
       config.headers = config.headers ?? {}
       config.headers['X-CSRF-TOKEN'] = csrf
@@ -67,6 +92,7 @@ http.interceptors.response.use(
       const auth = useAuthStore()
       auth.applyUser(null)
       clearCsrfToken()
+      clearAccessToken()
 
       if (!isAuthBootstrapCheck && router.currentRoute.value.path !== '/login') {
         await router.push({
