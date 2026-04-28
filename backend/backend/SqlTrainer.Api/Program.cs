@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -8,8 +10,6 @@ using SqlTrainer.Api.Auth;
 using SqlTrainer.Api.Controllers;
 using SqlTrainer.Api.Data;
 using SqlTrainer.Api.Services;
-using System.Security.Claims;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,8 +22,7 @@ builder.Services.AddCors(options =>
                 "https://sqltraining.up.railway.app")
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials()
-    );
+            .AllowCredentials());
 });
 
 builder.Services.AddControllers()
@@ -34,40 +33,48 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 
-builder.Services.AddSwaggerGen(c =>
+if (builder.Environment.IsDevelopment())
 {
-    c.SwaggerDoc("v1", new() { Title = "SqlTrainer.Api", Version = "v1" });
-
-    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    builder.Services.AddSwaggerGen(c =>
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "Írd be így: Bearer {token}"
-    });
+        c.SwaggerDoc("v1", new() { Title = "SqlTrainer.Api", Version = "v1" });
 
-    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-    {
+        c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            Name = "Authorization",
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description = "Írd be így: Bearer {token}"
+        });
+
+        c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+        {
             {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
                 {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
+                    Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                    {
+                        Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
     });
-});
+}
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.Configure<RunnerOptions>(builder.Configuration.GetSection("Runner"));
 
-var appConn = builder.Configuration.GetConnectionString("AppDb")!;
+var appConn = builder.Configuration.GetConnectionString("AppDb");
+
+if (string.IsNullOrWhiteSpace(appConn))
+{
+    throw new InvalidOperationException("Hiányzik a ConnectionStrings:AppDb beállítás.");
+}
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
@@ -112,7 +119,20 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ISqlRunnerService, SqlRunnerService>();
 
-var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>()!;
+var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();
+
+if (jwt is null ||
+    string.IsNullOrWhiteSpace(jwt.Issuer) ||
+    string.IsNullOrWhiteSpace(jwt.Audience) ||
+    string.IsNullOrWhiteSpace(jwt.SigningKey))
+{
+    throw new InvalidOperationException("Hiányos Jwt beállítás. Ellenőrizd: Jwt:Issuer, Jwt:Audience, Jwt:SigningKey.");
+}
+
+if (jwt.SigningKey.Length < 32)
+{
+    throw new InvalidOperationException("A Jwt:SigningKey legyen legalább 32 karakter hosszú.");
+}
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -151,8 +171,11 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.UseHttpsRedirection();
 
@@ -174,26 +197,23 @@ app.Use(async (context, next) =>
 
     var path = context.Request.Path.Value ?? string.Empty;
 
-    var isAuthBootstrapEndpoint =
+    var isCsrfExemptEndpoint =
         path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase) ||
-	path.StartsWith("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWith("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/api/auth/me", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/favicon", StringComparison.OrdinalIgnoreCase);
 
-    if (isUnsafeMethod && !isAuthBootstrapEndpoint)
+    if (isUnsafeMethod && !isCsrfExemptEndpoint)
     {
         var csrfCookie = context.Request.Cookies[AuthController.CsrfCookieName];
         var csrfHeader = context.Request.Headers["X-CSRF-TOKEN"].ToString();
 
-        var hasHeader = !string.IsNullOrWhiteSpace(csrfHeader);
-        var hasCookie = !string.IsNullOrWhiteSpace(csrfCookie);
-
         var csrfOk =
-            hasHeader &&
+            !string.IsNullOrWhiteSpace(csrfHeader) &&
             (
-                !hasCookie ||
+                string.IsNullOrWhiteSpace(csrfCookie) ||
                 string.Equals(csrfCookie, csrfHeader, StringComparison.Ordinal)
             );
 

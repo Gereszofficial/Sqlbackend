@@ -7,6 +7,7 @@ using SqlTrainer.Api.Auth;
 using SqlTrainer.Api.Data;
 using SqlTrainer.Api.Dtos;
 using SqlTrainer.Api.Models;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 
@@ -21,22 +22,21 @@ public class AuthController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IJwtTokenService _jwt;
-    private readonly IWebHostEnvironment _env;
 
-    public AuthController(AppDbContext db, IJwtTokenService jwt, IWebHostEnvironment env)
+    public AuthController(AppDbContext db, IJwtTokenService jwt)
     {
         _db = db;
         _jwt = jwt;
-        _env = env;
     }
 
     [HttpPost("register")]
     [EnableRateLimiting("auth")]
-    public async Task<ActionResult<AuthResponse>> Register(RegisterRequest req, CancellationToken ct)
+    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest req, CancellationToken ct)
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        if (!ModelState.IsValid)
+            return ValidationProblem(ModelState);
 
-        var email = req.Email.Trim().ToLowerInvariant();
+        var email = NormalizeEmail(req.Email);
 
         if (await _db.Users.AnyAsync(x => x.Email == email, ct))
             return BadRequest("Már létezik felhasználó ezzel az emaillel.");
@@ -51,40 +51,51 @@ public class AuthController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
-        SignIn(user);
-        return Ok(new AuthResponse(ToCurrentUser(user)));
+        var csrf = SignIn(user);
+        return Ok(new AuthResponse(ToCurrentUser(user), csrf));
     }
 
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
-    public async Task<ActionResult<AuthResponse>> Login(LoginRequest req, CancellationToken ct)
+    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
-        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        if (!ModelState.IsValid)
+            return ValidationProblem(ModelState);
 
-        var email = req.Email.Trim().ToLowerInvariant();
+        var email = NormalizeEmail(req.Email);
+
         var user = await _db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
-        if (user is null) return Unauthorized("Hibás email vagy jelszó.");
 
-        if (!BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
+        if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return Unauthorized("Hibás email vagy jelszó.");
 
-        SignIn(user);
-        return Ok(new AuthResponse(ToCurrentUser(user)));
+        var csrf = SignIn(user);
+        return Ok(new AuthResponse(ToCurrentUser(user), csrf));
     }
 
     [Authorize]
     [HttpGet("me")]
     public async Task<ActionResult<CurrentUserResponse>> Me(CancellationToken ct)
     {
-        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email") ?? User.FindFirstValue(ClaimTypes.Name) ?? User.FindFirstValue("sub");
-        if (string.IsNullOrWhiteSpace(email))
-            email = User.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email);
+        var email =
+            User.FindFirstValue(ClaimTypes.Email) ??
+            User.FindFirstValue(JwtRegisteredClaimNames.Email) ??
+            User.FindFirstValue(ClaimTypes.Name) ??
+            User.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
+            User.FindFirstValue("sub") ??
+            User.FindFirstValue("email");
 
         if (string.IsNullOrWhiteSpace(email))
             return Unauthorized();
 
-        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Email == email, ct);
-        if (user is null) return Unauthorized();
+        email = NormalizeEmail(email);
+
+        var user = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Email == email, ct);
+
+        if (user is null)
+            return Unauthorized();
 
         return Ok(ToCurrentUser(user));
     }
@@ -97,11 +108,20 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
-    private void SignIn(User user)
+    private string SignIn(User user)
     {
         var token = _jwt.CreateToken(user);
+        var csrf = GenerateCsrfToken();
 
-        Response.Cookies.Append(AuthCookieName, token, new CookieOptions
+        Response.Cookies.Append(AuthCookieName, token, BuildAuthCookieOptions());
+        Response.Cookies.Append(CsrfCookieName, csrf, BuildCsrfCookieOptions());
+
+        return csrf;
+    }
+
+    private static CookieOptions BuildAuthCookieOptions()
+    {
+        return new CookieOptions
         {
             HttpOnly = true,
             Secure = true,
@@ -110,9 +130,12 @@ public class AuthController : ControllerBase
             MaxAge = TimeSpan.FromHours(2),
             IsEssential = true,
             Path = "/"
-        }); 
+        };
+    }
 
-        Response.Cookies.Append(CsrfCookieName, GenerateCsrfToken(), new CookieOptions
+    private static CookieOptions BuildCsrfCookieOptions()
+    {
+        return new CookieOptions
         {
             HttpOnly = false,
             Secure = true,
@@ -121,7 +144,7 @@ public class AuthController : ControllerBase
             MaxAge = TimeSpan.FromHours(2),
             IsEssential = true,
             Path = "/"
-        });
+        };
     }
 
     private void ClearAuthCookies()
@@ -140,12 +163,19 @@ public class AuthController : ControllerBase
             Path = "/"
         });
     }
-    
 
     private static string GenerateCsrfToken()
     {
         return Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
     }
 
-    private static CurrentUserResponse ToCurrentUser(User user) => new(user.Email, user.Role);
+    private static string NormalizeEmail(string email)
+    {
+        return email.Trim().ToLowerInvariant();
+    }
+
+    private static CurrentUserResponse ToCurrentUser(User user)
+    {
+        return new CurrentUserResponse(user.Email, user.Role);
+    }
 }
