@@ -2,9 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 
-// 👇 EZ A FONTOS RÉSZ
 const API_BASE = import.meta.env.VITE_API_BASE
-console.log('API BASE:', API_BASE)
 
 function readCookie(name: string): string {
   const prefix = `${name}=`
@@ -13,7 +11,6 @@ function readCookie(name: string): string {
   return match ? decodeURIComponent(match.slice(prefix.length)) : ''
 }
 
-// 👇 ITT KELL A baseURL
 export const http = axios.create({
   baseURL: API_BASE,
   withCredentials: true,
@@ -27,7 +24,8 @@ http.interceptors.request.use((config) => {
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
 
   if (needsCsrf) {
-    const csrf = readCookie('sqltrainer_csrf')
+    const csrf = localStorage.getItem('sqltrainer_csrf') || readCookie('sqltrainer_csrf')
+
     if (csrf) {
       config.headers = config.headers ?? {}
       config.headers['X-CSRF-TOKEN'] = csrf
@@ -48,6 +46,7 @@ http.interceptors.response.use(
 
       const auth = useAuthStore()
       auth.applyUser(null)
+      localStorage.removeItem('sqltrainer_csrf')
 
       if (!isAuthBootstrapCheck && router.currentRoute.value.path !== '/login') {
         await router.push({

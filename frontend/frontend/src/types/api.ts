@@ -1,5 +1,8 @@
 export type CurrentUser = { email: string; role: 'Student' | 'Admin' }
-export type AuthResponse = { user: CurrentUser }
+export type AuthResponse = {
+  user: CurrentUser
+  csrfToken: string
+}
 
 export type CreateIdResponse = { id: number }
 

@@ -19,27 +19,33 @@ export const useAuthStore = defineStore('auth', {
     sessionChecked: false,
     sessionNonce: 0
   }),
+
   getters: {
     isAuthed: (s) => s.role !== 'Unknown' && !!s.email,
     isAdmin: (s) => s.role === 'Admin',
     isStudent: (s) => s.role === 'Student'
   },
+
   actions: {
     applyUser(user?: CurrentUser | null) {
       this.role = normalizeRole(user?.role)
       this.email = user?.email ?? ''
       this.sessionChecked = true
       this.sessionNonce++
+
       if (this.role === 'Unknown' || !this.email) {
         localStorage.removeItem('sqltrainer_role')
         localStorage.removeItem('sqltrainer_email')
         return
       }
+
       localStorage.setItem('sqltrainer_role', this.role)
       localStorage.setItem('sqltrainer_email', this.email)
     },
+
     async ensureSession(force = false) {
       if (this.sessionChecked && !force) return this.isAuthed
+
       try {
         const res = await http.get<CurrentUser>('/api/auth/me')
         this.applyUser(res.data)
@@ -49,20 +55,35 @@ export const useAuthStore = defineStore('auth', {
         return false
       }
     },
+
     async login(email: string, password: string) {
       const res = await http.post<AuthResponse>('/api/auth/login', { email, password })
+
+      if (res.data.csrfToken) {
+        localStorage.setItem('sqltrainer_csrf', res.data.csrfToken)
+      }
+
       this.applyUser(res.data.user)
     },
+
     async register(email: string, password: string) {
       const res = await http.post<AuthResponse>('/api/auth/register', { email, password })
+
+      if (res.data.csrfToken) {
+        localStorage.setItem('sqltrainer_csrf', res.data.csrfToken)
+      }
+
       this.applyUser(res.data.user)
     },
+
     async logout() {
       try {
         await http.post('/api/auth/logout')
       } catch {
-        // ignore logout transport errors and clear local state anyway
+        // ignore
       }
+
+      localStorage.removeItem('sqltrainer_csrf')
       this.applyUser(null)
     }
   }
