@@ -26,6 +26,7 @@ builder.Services.AddCors(options =>
                     return false;
 
                 return origin.Equals("https://sqltraining.up.railway.app", StringComparison.OrdinalIgnoreCase)
+                    || origin.EndsWith(".up.railway.app", StringComparison.OrdinalIgnoreCase)
                     || origin.Equals("http://localhost:5173", StringComparison.OrdinalIgnoreCase)
                     || origin.Equals("https://localhost:5173", StringComparison.OrdinalIgnoreCase);
             })
