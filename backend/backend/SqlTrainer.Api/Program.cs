@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -13,16 +14,39 @@ using SqlTrainer.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+static bool IsAllowedCorsOrigin(string origin)
+{
+    if (string.IsNullOrWhiteSpace(origin))
+        return false;
+
+    if (origin.Equals("http://localhost:5173", StringComparison.OrdinalIgnoreCase) ||
+        origin.Equals("https://localhost:5173", StringComparison.OrdinalIgnoreCase) ||
+        origin.Equals("https://sqltraining.up.railway.app", StringComparison.OrdinalIgnoreCase))
+        return true;
+
+    if (Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+        uri.Scheme == Uri.UriSchemeHttps &&
+        uri.Host.EndsWith(".up.railway.app", StringComparison.OrdinalIgnoreCase))
+        return true;
+
+    return false;
+}
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("DevCors", policy =>
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "https://localhost:5173",
-                "https://sqltraining.up.railway.app")
+    options.AddPolicy("FrontendCors", policy =>
+        policy
+            .SetIsOriginAllowed(IsAllowedCorsOrigin)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials());
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
 });
 
 builder.Services.AddControllers()
@@ -72,9 +96,7 @@ builder.Services.Configure<RunnerOptions>(builder.Configuration.GetSection("Runn
 var appConn = builder.Configuration.GetConnectionString("AppDb");
 
 if (string.IsNullOrWhiteSpace(appConn))
-{
     throw new InvalidOperationException("Hiányzik a ConnectionStrings:AppDb beállítás.");
-}
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
@@ -130,9 +152,7 @@ if (jwt is null ||
 }
 
 if (jwt.SigningKey.Length < 32)
-{
     throw new InvalidOperationException("A Jwt:SigningKey legyen legalább 32 karakter hosszú.");
-}
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -171,6 +191,8 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -181,12 +203,18 @@ app.UseHttpsRedirection();
 
 app.UseRouting();
 
-app.UseCors("DevCors");
+app.UseCors("FrontendCors");
 
 app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {
+    if (HttpMethods.IsOptions(context.Request.Method))
+    {
+        await next();
+        return;
+    }
+
     var method = context.Request.Method;
 
     var isUnsafeMethod =

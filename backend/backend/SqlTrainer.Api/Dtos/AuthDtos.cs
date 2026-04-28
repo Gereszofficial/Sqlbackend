@@ -14,5 +14,9 @@ public record LoginRequest(
 );
 
 public record CurrentUserResponse(string Email, UserRole Role);
-public record AuthResponse(CurrentUserResponse User, string CsrfToken);
 
+public record AuthResponse(
+    CurrentUserResponse User,
+    string CsrfToken,
+    string AccessToken
+);

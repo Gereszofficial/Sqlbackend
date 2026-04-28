@@ -51,8 +51,9 @@ public class AuthController : ControllerBase
         _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
 
-        var csrf = SignIn(user);
-        return Ok(new AuthResponse(ToCurrentUser(user), csrf));
+        var (csrf, accessToken) = SignIn(user);
+
+        return Ok(new AuthResponse(ToCurrentUser(user), csrf, accessToken));
     }
 
     [HttpPost("login")]
@@ -69,8 +70,9 @@ public class AuthController : ControllerBase
         if (user is null || !BCrypt.Net.BCrypt.Verify(req.Password, user.PasswordHash))
             return Unauthorized("Hibás email vagy jelszó.");
 
-        var csrf = SignIn(user);
-        return Ok(new AuthResponse(ToCurrentUser(user), csrf));
+        var (csrf, accessToken) = SignIn(user);
+
+        return Ok(new AuthResponse(ToCurrentUser(user), csrf, accessToken));
     }
 
     [Authorize]
@@ -108,7 +110,7 @@ public class AuthController : ControllerBase
         return NoContent();
     }
 
-    private string SignIn(User user)
+    private (string csrf, string accessToken) SignIn(User user)
     {
         var token = _jwt.CreateToken(user);
         var csrf = GenerateCsrfToken();
@@ -116,7 +118,7 @@ public class AuthController : ControllerBase
         Response.Cookies.Append(AuthCookieName, token, BuildAuthCookieOptions());
         Response.Cookies.Append(CsrfCookieName, csrf, BuildCsrfCookieOptions());
 
-        return csrf;
+        return (csrf, token);
     }
 
     private static CookieOptions BuildAuthCookieOptions()
