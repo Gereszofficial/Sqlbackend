@@ -14,7 +14,7 @@ using SqlTrainer.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ✅ PRODUCTION CORS
+// ✅ STABIL CORS (Railway + localhost)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendCors", policy =>
@@ -36,7 +36,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Railway / proxy fix
+// proxy fix
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -52,7 +52,7 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 
-// Swagger (dev only)
+// Swagger dev only
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddSwaggerGen(c =>
@@ -65,23 +65,7 @@ if (builder.Environment.IsDevelopment())
             Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
             Scheme = "bearer",
             BearerFormat = "JWT",
-            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-            Description = "Írd be így: Bearer {token}"
-        });
-
-        c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-        {
-            {
-                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-                {
-                    Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                    {
-                        Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                        Id = "Bearer"
-                    }
-                },
-                Array.Empty<string>()
-            }
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header
         });
     });
 }
@@ -92,46 +76,24 @@ builder.Services.Configure<RunnerOptions>(builder.Configuration.GetSection("Runn
 var appConn = builder.Configuration.GetConnectionString("AppDb");
 
 if (string.IsNullOrWhiteSpace(appConn))
-    throw new InvalidOperationException("Hiányzik a ConnectionStrings:AppDb beállítás.");
+    throw new InvalidOperationException("Missing DB connection");
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
-    var configured = builder.Configuration["Database:ServerVersion"];
-    ServerVersion serverVersion;
-
-    if (!string.IsNullOrWhiteSpace(configured))
-    {
-        serverVersion = ServerVersion.Parse(configured);
-    }
-    else
-    {
-        try
-        {
-            serverVersion = ServerVersion.AutoDetect(appConn);
-        }
-        catch
-        {
-            serverVersion = ServerVersion.Parse("8.0.0-mysql");
-        }
-    }
-
+    var serverVersion = ServerVersion.AutoDetect(appConn);
     opt.UseMySql(appConn, serverVersion);
 });
 
-// Rate limit
+// rate limit
 builder.Services.AddRateLimiter(options =>
 {
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 8,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
+                Window = TimeSpan.FromMinutes(1)
             }));
 });
 
@@ -141,17 +103,6 @@ builder.Services.AddScoped<ISqlRunnerService, SqlRunnerService>();
 // JWT
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();
 
-if (jwt is null ||
-    string.IsNullOrWhiteSpace(jwt.Issuer) ||
-    string.IsNullOrWhiteSpace(jwt.Audience) ||
-    string.IsNullOrWhiteSpace(jwt.SigningKey))
-{
-    throw new InvalidOperationException("Hiányos Jwt config.");
-}
-
-if (jwt.SigningKey.Length < 32)
-    throw new InvalidOperationException("Jwt SigningKey túl rövid.");
-
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
@@ -159,13 +110,12 @@ builder.Services
         opt.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = jwt.Issuer,
+            ValidIssuer = jwt!.Issuer,
             ValidateAudience = true,
             ValidAudience = jwt.Audience,
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(10),
             NameClaimType = ClaimTypes.Email,
             RoleClaimType = ClaimTypes.Role
         };
@@ -179,7 +129,6 @@ builder.Services
                 {
                     context.Token = cookieToken;
                 }
-
                 return Task.CompletedTask;
             }
         };
@@ -191,65 +140,38 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
 app.UseHttpsRedirection();
 
 app.UseRouting();
 
-app.UseCors("FrontendCors");
-
-app.UseRateLimiter();
-
-// CSRF middleware
+// 🔥 FORCE CORS HEADER (ez a lényeg)
 app.Use(async (context, next) =>
 {
-    if (HttpMethods.IsOptions(context.Request.Method))
+    var origin = context.Request.Headers.Origin.ToString();
+
+    if (!string.IsNullOrEmpty(origin))
     {
-        await next();
-        return;
+        context.Response.Headers["Access-Control-Allow-Origin"] = origin;
+        context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
+        context.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-CSRF-TOKEN";
+        context.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+        context.Response.Headers["Vary"] = "Origin";
     }
 
-    var method = context.Request.Method;
-
-    var isUnsafe =
-        HttpMethods.IsPost(method) ||
-        HttpMethods.IsPut(method) ||
-        HttpMethods.IsPatch(method) ||
-        HttpMethods.IsDelete(method);
-
-    var path = context.Request.Path.Value ?? "";
-
-    var skip =
-        path.StartsWith("/api/auth/login") ||
-        path.StartsWith("/api/auth/register") ||
-        path.StartsWith("/api/auth/logout") ||
-        path.StartsWith("/api/auth/me") ||
-        path.StartsWith("/swagger");
-
-    if (isUnsafe && !skip)
+    if (HttpMethods.IsOptions(context.Request.Method))
     {
-        var csrfCookie = context.Request.Cookies[AuthController.CsrfCookieName];
-        var csrfHeader = context.Request.Headers["X-CSRF-TOKEN"].ToString();
-
-        if (string.IsNullOrWhiteSpace(csrfHeader) || csrfCookie != csrfHeader)
-        {
-            context.Response.StatusCode = 400;
-            await context.Response.WriteAsync("CSRF error");
-            return;
-        }
+        context.Response.StatusCode = 204;
+        return;
     }
 
     await next();
 });
 
+app.UseCors("FrontendCors");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers().RequireCors("FrontendCors");
+app.MapControllers();
 
 app.Run();
