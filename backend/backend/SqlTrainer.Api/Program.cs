@@ -18,7 +18,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("DevCors", policy =>
         policy.WithOrigins(
                   "http://localhost:5173",
-                  "https://localhost:5173")
+                  "https://localhost:5173",
+                  "https://sqltraining.up.railway.app")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials()

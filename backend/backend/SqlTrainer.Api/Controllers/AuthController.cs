@@ -100,25 +100,23 @@ public class AuthController : ControllerBase
     private void SignIn(User user)
     {
         var token = _jwt.CreateToken(user);
-        var isSecure = !_env.IsDevelopment() || Request.IsHttps;
-        var sameSite = SameSiteMode.Strict;
 
         Response.Cookies.Append(AuthCookieName, token, new CookieOptions
         {
             HttpOnly = true,
-            Secure = isSecure,
-            SameSite = sameSite,
+            Secure = true,
+            SameSite = SameSiteMode.None,
             Expires = DateTimeOffset.UtcNow.AddHours(2),
             MaxAge = TimeSpan.FromHours(2),
             IsEssential = true,
             Path = "/"
-        });
+        }); 
 
         Response.Cookies.Append(CsrfCookieName, GenerateCsrfToken(), new CookieOptions
         {
             HttpOnly = false,
-            Secure = isSecure,
-            SameSite = sameSite,
+            Secure = true,
+            SameSite = SameSiteMode.None,
             Expires = DateTimeOffset.UtcNow.AddHours(2),
             MaxAge = TimeSpan.FromHours(2),
             IsEssential = true,
@@ -128,23 +126,21 @@ public class AuthController : ControllerBase
 
     private void ClearAuthCookies()
     {
-        var isSecure = !_env.IsDevelopment() || Request.IsHttps;
-        var sameSite = SameSiteMode.Strict;
-
         Response.Cookies.Delete(AuthCookieName, new CookieOptions
         {
-            Secure = isSecure,
-            SameSite = sameSite,
+            Secure = true,
+            SameSite = SameSiteMode.None,
             Path = "/"
         });
 
         Response.Cookies.Delete(CsrfCookieName, new CookieOptions
         {
-            Secure = isSecure,
-            SameSite = sameSite,
+            Secure = true,
+            SameSite = SameSiteMode.None,
             Path = "/"
         });
     }
+    
 
     private static string GenerateCsrfToken()
     {
