@@ -14,34 +14,28 @@ using SqlTrainer.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-static bool IsAllowedCorsOrigin(string origin)
-{
-    if (string.IsNullOrWhiteSpace(origin))
-        return false;
-
-    if (origin.Equals("http://localhost:5173", StringComparison.OrdinalIgnoreCase) ||
-        origin.Equals("https://localhost:5173", StringComparison.OrdinalIgnoreCase) ||
-        origin.Equals("https://sqltraining.up.railway.app", StringComparison.OrdinalIgnoreCase))
-        return true;
-
-    if (Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
-        uri.Scheme == Uri.UriSchemeHttps &&
-        uri.Host.EndsWith(".up.railway.app", StringComparison.OrdinalIgnoreCase))
-        return true;
-
-    return false;
-}
-
+// ✅ PRODUCTION CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendCors", policy =>
+    {
         policy
-            .SetIsOriginAllowed(IsAllowedCorsOrigin)
+            .SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrWhiteSpace(origin))
+                    return false;
+
+                return origin.Equals("https://sqltraining.up.railway.app", StringComparison.OrdinalIgnoreCase)
+                    || origin.Equals("http://localhost:5173", StringComparison.OrdinalIgnoreCase)
+                    || origin.Equals("https://localhost:5173", StringComparison.OrdinalIgnoreCase);
+            })
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials());
+            .AllowCredentials();
+    });
 });
 
+// Railway / proxy fix
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -57,6 +51,7 @@ builder.Services.AddControllers()
 
 builder.Services.AddEndpointsApiExplorer();
 
+// Swagger (dev only)
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddSwaggerGen(c =>
@@ -122,6 +117,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseMySql(appConn, serverVersion);
 });
 
+// Rate limit
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -141,6 +137,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<ISqlRunnerService, SqlRunnerService>();
 
+// JWT
 var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>();
 
 if (jwt is null ||
@@ -148,11 +145,11 @@ if (jwt is null ||
     string.IsNullOrWhiteSpace(jwt.Audience) ||
     string.IsNullOrWhiteSpace(jwt.SigningKey))
 {
-    throw new InvalidOperationException("Hiányos Jwt beállítás. Ellenőrizd: Jwt:Issuer, Jwt:Audience, Jwt:SigningKey.");
+    throw new InvalidOperationException("Hiányos Jwt config.");
 }
 
 if (jwt.SigningKey.Length < 32)
-    throw new InvalidOperationException("A Jwt:SigningKey legyen legalább 32 karakter hosszú.");
+    throw new InvalidOperationException("Jwt SigningKey túl rövid.");
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -207,6 +204,7 @@ app.UseCors("FrontendCors");
 
 app.UseRateLimiter();
 
+// CSRF middleware
 app.Use(async (context, next) =>
 {
     if (HttpMethods.IsOptions(context.Request.Method))
@@ -217,38 +215,30 @@ app.Use(async (context, next) =>
 
     var method = context.Request.Method;
 
-    var isUnsafeMethod =
+    var isUnsafe =
         HttpMethods.IsPost(method) ||
         HttpMethods.IsPut(method) ||
         HttpMethods.IsPatch(method) ||
         HttpMethods.IsDelete(method);
 
-    var path = context.Request.Path.Value ?? string.Empty;
+    var path = context.Request.Path.Value ?? "";
 
-    var isCsrfExemptEndpoint =
-        path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/api/auth/me", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
-        path.StartsWith("/favicon", StringComparison.OrdinalIgnoreCase);
+    var skip =
+        path.StartsWith("/api/auth/login") ||
+        path.StartsWith("/api/auth/register") ||
+        path.StartsWith("/api/auth/logout") ||
+        path.StartsWith("/api/auth/me") ||
+        path.StartsWith("/swagger");
 
-    if (isUnsafeMethod && !isCsrfExemptEndpoint)
+    if (isUnsafe && !skip)
     {
         var csrfCookie = context.Request.Cookies[AuthController.CsrfCookieName];
         var csrfHeader = context.Request.Headers["X-CSRF-TOKEN"].ToString();
 
-        var csrfOk =
-            !string.IsNullOrWhiteSpace(csrfHeader) &&
-            (
-                string.IsNullOrWhiteSpace(csrfCookie) ||
-                string.Equals(csrfCookie, csrfHeader, StringComparison.Ordinal)
-            );
-
-        if (!csrfOk)
+        if (string.IsNullOrWhiteSpace(csrfHeader) || csrfCookie != csrfHeader)
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsync("Hiányzó vagy hibás CSRF token.");
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsync("CSRF error");
             return;
         }
     }
@@ -259,6 +249,6 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+app.MapControllers().RequireCors("FrontendCors");
 
 app.Run();
