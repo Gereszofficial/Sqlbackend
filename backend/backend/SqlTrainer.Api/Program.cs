@@ -177,6 +177,7 @@ app.Use(async (context, next) =>
     var isAuthBootstrapEndpoint =
         path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase) ||
+	path.StartsWith("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/api/auth/me", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase) ||
         path.StartsWith("/favicon", StringComparison.OrdinalIgnoreCase);
