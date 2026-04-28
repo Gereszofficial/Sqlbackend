@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   preview: {
     host: "0.0.0.0",
-    allowedHosts: ["sqltraining.up.railway.app"],
+    port: parseInt(process.env.PORT || "4173")
   },
   resolve: {
     alias: {
