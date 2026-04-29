@@ -42,12 +42,21 @@ public static class SqlSafety
         return !ForbiddenInSandbox.Any(f => s.Contains(f));
     }
 
+    //public static string EnsureLimit(string sql, int maxRows)
+    //{
+    //    var s = sql.Trim().TrimEnd(';');
+    //    if (Regex.IsMatch(s, @"\blimit\b", RegexOptions.IgnoreCase)) return s + ";";
+    //    return $"{s} LIMIT {maxRows};";
+    //}
     public static string EnsureLimit(string sql, int maxRows)
     {
-        var s = sql.Trim().TrimEnd(';');
-        if (Regex.IsMatch(s, @"\blimit\b", RegexOptions.IgnoreCase)) return s + ";";
-        return $"{s} LIMIT {maxRows};";
+        if (string.IsNullOrWhiteSpace(sql))
+            return sql;
+
+        var s = sql.Trim();
+        return s.EndsWith(";") ? s : s + ";";
     }
+    
 
     private static string Normalize(string sql)
         => Regex.Replace(sql.ToLowerInvariant(), @"\s+", " ").Trim();
