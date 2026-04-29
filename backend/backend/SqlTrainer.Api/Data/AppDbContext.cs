@@ -36,6 +36,13 @@ public class AppDbContext : DbContext
         b.Entity<Topic>().Property(x => x.DescriptionMarkdown).HasColumnType("LONGTEXT");
         b.Entity<Topic>().Property(x => x.Slug).HasMaxLength(160);
 
+        
+        b.Entity<Topic>().Property(x => x.IsPublished).HasColumnName("is_published");
+        b.Entity<Topic>().Property(x => x.PublishedAtUtc).HasColumnName("published_at_utc");
+
+        b.Entity<TaskItem>().Property(x => x.IsPublished).HasColumnName("is_published");
+        b.Entity<TaskItem>().Property(x => x.PublishedAtUtc).HasColumnName("published_at_utc");
+
         b.Entity<TaskItem>()
             .HasOne(t => t.Topic)
             .WithMany(x => x.Tasks)
